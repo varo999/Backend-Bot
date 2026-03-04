@@ -1,13 +1,14 @@
-from GestorPDF import *
 class Bot:
-    def __init__(self, nombre, explicacion="", nombres_pdf=None, id_almacen_gemini=None):
-        # Eliminamos token_gemini y token_telegram de los parámetros y del self
+    def __init__(self, nombre, explicacion="", pdfs=None, id_almacen_gemini=None, nombre_imagen=None):
         self.nombre = nombre
         self.explicacion = explicacion
-        self.pdfs = GestorPDF(nombres_pdf)
+        # Inicializa como lista vacía si no se pasan PDFs
+        self.pdfs = pdfs if pdfs is not None else [] 
         self.almacen_gemini = id_almacen_gemini
+        self.nombre_imagen = nombre_imagen
 
-        
     def obtener_id_almacen(self):
-        # También corrige el retorno aquí:
         return self.almacen_gemini
+    
+    def __repr__(self):
+        return f"<Bot {self.nombre} - {len(self.pdfs)} PDFs>"

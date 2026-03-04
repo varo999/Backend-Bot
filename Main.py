@@ -5,8 +5,7 @@ import os
 import sys
 
 
-CLAVE_API = 
-BOT_TOKEN = 
+
 ''' https://www.sanidad.gob.es/organizacion/sns/planCalidadSNS/portada/normativa.htm
 Ley 292006, de 26 de julio, de garantías y uso racional de los medicamentos y productos sanitarios.pdf-98 paginas
 Ley de medidas sanitarias frente al tabaquismo.pdf - 7paginas

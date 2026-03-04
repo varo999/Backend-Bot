@@ -7,23 +7,28 @@ class ControladorBots:
         # Usamos un diccionario para buscar bots por nombre fácilmente
         self.diccionario_bots = {}
 
-    def crear_bot(self, nombre, explicacion="", nombres_pdf=None, id_almacen_gemini=None):
-        """Instancia un nuevo Bot y lo añade a la colección (Versión Limpia)."""
+    def crear_bot(self, nombre, explicacion="", pdfs=None, id_almacen_gemini=None, nombre_imagen=None):
+        """Instancia un nuevo Bot y lo añade a la colección (Versión actualizada)."""
         if nombre in self.diccionario_bots:
             print(f"⚠️ El bot '{nombre}' ya existe. Elige un nombre diferente.")
             return None
         
-        # 1. Creamos la instancia del Bot (Llamada coherente con la nueva clase Bot)
-        # Eliminamos: token_gemini y token_telegram de la llamada
+        # 1. Creamos la instancia del Bot
+        # Usamos 'pdfs' (lista de strings) y añadimos 'nombre_imagen'
         nuevo_bot = Bot(
             nombre=nombre, 
             explicacion=explicacion, 
-            nombres_pdf=nombres_pdf, 
-            id_almacen_gemini=id_almacen_gemini
+            pdfs=pdfs, 
+            id_almacen_gemini=id_almacen_gemini,
+            nombre_imagen=nombre_imagen
         )
         
-        # 2. Lo guardamos en nuestro "almacén"
+        # 2. Lo guardamos en el diccionario en memoria
         self.diccionario_bots[nombre] = nuevo_bot
+        
+        # 3. Opcional: Si quieres que se guarde automáticamente en la DB al crearlo
+        # self.db_manager.crear_bot(nuevo_bot)
+        
         print(f"🤖 Bot '{nombre}' creado y registrado con éxito.")
         
         return nuevo_bot
