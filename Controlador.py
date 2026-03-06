@@ -12,11 +12,12 @@ class Controlador:
         print("🔍 [DEBUG] Iniciando componentes del Controlador...")
         
         # 1. Rutas y Utilidades
-        self.ruta_documentos = "C:/Users/afogu/Desktop/BOT-web/Documentos"
+        self.ruta_img = self.crear_carpeta_imagenes()
+        self.ruta_doc = self.crear_carpeta_pdf()
         self.limpiador = LimpiadorDatos()
         
         # 2. Motores (Gemini y DB)
-        self.controlador_gemini = ControladorGemini(clave_api=api_key)
+        self.controlador_gemini = ControladorGemini(clave_api=api_key,ruta_documentos=self.ruta_doc)
         self.db = DatabaseManager()
         self.controlador_bots = ControladorBots()
         
@@ -35,8 +36,27 @@ class Controlador:
         self.hilo_telegram.start()
         
         print("✅ Controlador inicializado y sistemas activos.")
+
+    def crear_carpeta_imagenes(self):
+        """Crea la carpeta 'imagenes' si no existe y devuelve su ruta absoluta."""
+        raiz = os.path.dirname(os.path.abspath(__file__))
+        ruta_imagenes = os.path.join(raiz, "imagenes")
         
+        # exist_ok=True evita errores si la carpeta ya existe
+        os.makedirs(ruta_imagenes, exist_ok=True)
         
+        return ruta_imagenes
+
+    def crear_carpeta_pdf(self):
+        """Crea la carpeta 'pdf' si no existe y devuelve su ruta absoluta."""
+        raiz = os.path.dirname(os.path.abspath(__file__))
+        ruta_pdf = os.path.join(raiz, "pdf")
+        
+        # exist_ok=True evita errores si la carpeta ya existe
+        os.makedirs(ruta_pdf, exist_ok=True)
+        
+        return ruta_pdf
+
     def _procesar_despliegue_bot(self, registro):
         """
         Método privado que contiene la lógica central de despliegue.
@@ -105,59 +125,79 @@ class Controlador:
         
         print(f"✨ Proceso masivo finalizado. {len(registros)} bots procesados.") 
 
-    def registrar_y_desplegar_nuevo_bot(self, nombre_usuario, explicacion_usuario, lista_pdfs_django):
-            
-            # --- PASO 1: LIMPIEZA Y GUARDADO FÍSICO ---
-            nombre_limpio = self.limpiador.limpiar_nombre_bot(nombre_usuario)
-            explicacion_limpia = self.limpiador.limpiar_explicacion(explicacion_usuario)
-            
-            nombres_pdfs_finales = []
+    def registrar_y_desplegar_nuevo_bot(self, nombre_usuario, explicacion_usuario, lista_pdfs_django, imagen_django):
+        """
+        Registra un bot, guarda sus PDFs e Imagen limpiando los nombres y lo despliega.
+        """
+        # --- PASO 1: LIMPIEZA ---
+        nombre_limpio = self.limpiador.limpiar_nombre_bot(nombre_usuario)
+        explicacion_limpia = self.limpiador.limpiar_explicacion(explicacion_usuario)
+        
+        # --- PASO 2: GUARDADO FÍSICO DE LA IMAGEN ---
+        nombre_imagen_limpio = None
+        if imagen_django:
+            try:
+                # Limpiamos el nombre usando tu función específica para imágenes
+                nombre_imagen_limpio = self.limpiador.limpiar_nombre_imagen(imagen_django)
+                ruta_imagen_final = os.path.join(self.ruta_img, nombre_imagen_limpio)
+                
+                # Guardar físicamente en la carpeta de imágenes
+                with open(ruta_imagen_final, 'wb+') as destino:
+                    for chunk in imagen_django.chunks():
+                        destino.write(chunk)
+                print(f"🖼️ Imagen guardada: {nombre_imagen_limpio}")
+            except Exception as e:
+                print(f"❌ Error guardando imagen: {e}")
 
-            for archivo_pdf in lista_pdfs_django:
-                try:
-                    nombre_archivo_limpio = self.limpiador.limpiar_archivo_raw(archivo_pdf)
-                    ruta_final = os.path.join(self.ruta_documentos, nombre_archivo_limpio)
-                    
-                    # Guardar físicamente
-                    with open(ruta_final, 'wb+') as destino:
-                        for chunk in archivo_pdf.chunks():
-                            destino.write(chunk)
-                    
-                    nombres_pdfs_finales.append(nombre_archivo_limpio)
-                except Exception as e:
-                    print(f"❌ Error guardando archivo {archivo_pdf.name}: {e}")
+        # --- PASO 3: GUARDADO FÍSICO DE PDFs ---
+        nombres_pdfs_finales = []
+        for archivo_pdf in lista_pdfs_django:
+            try:
+                nombre_archivo_limpio = self.limpiador.limpiar_archivo_raw(archivo_pdf)
+                ruta_pdf_final = os.path.join(self.ruta_doc, nombre_archivo_limpio)
+                
+                # Guardar físicamente
+                with open(ruta_pdf_final, 'wb+') as destino:
+                    for chunk in archivo_pdf.chunks():
+                        destino.write(chunk)
+                
+                nombres_pdfs_finales.append(nombre_archivo_limpio)
+            except Exception as e:
+                print(f"❌ Error guardando PDF {archivo_pdf.name}: {e}")
 
-            # --- PASO 2: INSERTAR EN BASE DE DATOS ---
-            pdfs_json = json.dumps(nombres_pdfs_finales)
-            
-            with sqlite3.connect(self.db.db_name) as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO bots (nombre, explicacion, pdfs, nombre_almacen_gemini)
-                    VALUES (?, ?, ?, ?)
-                ''', (nombre_limpio, explicacion_limpia, pdfs_json, None))
-                conn.commit()
+        # --- PASO 4: INSERTAR EN BASE DE DATOS ---
+        pdfs_json = json.dumps(nombres_pdfs_finales)
+        
+        with sqlite3.connect(self.db.db_name) as conn:
+            cursor = conn.cursor()
+            # Actualizamos para incluir la columna nombre_imagen
+            cursor.execute('''
+                INSERT OR REPLACE INTO bots (nombre, explicacion, pdfs, nombre_almacen_gemini, nombre_imagen)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nombre_limpio, explicacion_limpia, pdfs_json, None, nombre_imagen_limpio))
+            conn.commit()
 
-            print(f"✅ Bot '{nombre_limpio}' guardado en DB. Iniciando despliegue...")
+        print(f"✅ Bot '{nombre_limpio}' guardado en DB con imagen '{nombre_imagen_limpio}'.")
 
-            # --- PASO 3: LLAMAR A TU FUNCIÓN DE DESPLIEGUE ---
-            registro_para_despliegue = (
-                nombre_limpio, 
-                explicacion_limpia, 
-                pdfs_json, 
-                None 
-            )
-            
-            # Ejecutamos el despliegue (esto lo mete en la RAM del ControladorBots)
-            resultado = self._procesar_despliegue_bot(registro_para_despliegue)
+        # --- PASO 5: DESPLIEGUE ---
+        # Actualizamos el registro para que el despliegue también sepa de la imagen si es necesario
+        registro_para_despliegue = (
+            None,
+            nombre_limpio, 
+            explicacion_limpia, 
+            pdfs_json, 
+            None,
+            nombre_imagen_limpio
+        )
+        
+        resultado = self._procesar_despliegue_bot(registro_para_despliegue)
 
-            # --- PASO 4: ACTUALIZACIÓN DE INTERFAZ TELEGRAM ---
-            if hasattr(self, 'bot_telegram') and self.bot_telegram:
-                # Refrescamos la lista del bot para que incluya al nuevo recién creado
-                self.bot_telegram.actualizar_lista_desde_controlador()
-                print(f"📲 Menú de Telegram actualizado con el nuevo bot: {nombre_limpio}")
+        # --- PASO 6: ACTUALIZACIÓN DE TELEGRAM ---
+        if hasattr(self, 'bot_telegram') and self.bot_telegram:
+            self.bot_telegram.actualizar_lista_desde_controlador()
+            print(f"📲 Menú de Telegram actualizado.")
 
-            return resultado
+        return resultado
 
     def eliminar_bot(self, nombre_usuario: str):
         """
@@ -197,40 +237,92 @@ class Controlador:
             print(f"❌ El bot '{nombre_limpio}' no se encontró en la memoria local.")
             return False
 
-    def procesar_consulta_bot(self, nombre_bot: str, pregunta: str) -> str:
+    def procesar_consulta_bot(self, nombre_bot: str, pregunta: str, id_conversacion: int) -> str:
         """
-        Paso final: Extrae el ID del almacén mediante el nombre del bot 
-        y ejecuta la consulta RAG con historial vacío.
+        Procesa la consulta cargando el historial de la BD y guardando la nueva interacción.
         """
-        # 1. Verificación de existencia en el diccionario de bots
+        # 1. Verificación de existencia del bot
         if nombre_bot not in self.controlador_bots.diccionario_bots:
             print(f"❌ Error: El bot '{nombre_bot}' no está registrado.")
             return "Lo siento, el asistente seleccionado no es válido."
 
-        # 2. Verificación de seguridad
+        # 2. Obtener ID del almacén
         id_almacen = self.controlador_bots.obtener_id_almacen_por_nombre(nombre_bot)
         if not id_almacen:
-            print(f"⚠️ Error: No se pudo obtener el ID de almacén para '{nombre_bot}'.")
             return "Lo siento, este asistente no tiene acceso a sus documentos ahora mismo."
 
-        print(f"🧠 Consultando a {nombre_bot} (Almacén: {id_almacen})...")
+        # --- NUEVA LÓGICA DE BASE DE DATOS ---
+        
+        # 3. Cargar historial de la base de datos
+        # Asumimos que self.db es tu DatabaseManager
+        mensajes_db = self.db.obtener_historial_chat(id_conversacion) 
+        
+        # 4. Formatear historial para Gemini: List[Tuple[user_msg, bot_msg]]
+        # Como los mensajes vienen en filas individuales, agrupamos pares (Pregunta, Respuesta)
+        historial_formateado: List[Tuple[str, str]] = []
+        
+        # El historial_chat devuelve (contenido, fecha, rol) según lo configurado antes
+        # Aquí un truco para emparejar pregunta del usuario con respuesta del bot:
+        temp_pregunta = None
+        for msg in mensajes_db:
+            # Usamos desempaquetado seguro para evitar el IndexError
+            # msg[0] = contenido, msg[1] = fecha, msg[2] = rol
+            try:
+                contenido = msg[0]
+                rol = msg[2]
+                
+                if rol == "usuario":
+                    temp_pregunta = contenido
+                elif rol == "asistente" and temp_pregunta:
+                    historial_formateado.append((temp_pregunta, contenido))
+                    temp_pregunta = None
+            except IndexError:
+                print("⚠️ Advertencia: Un mensaje en la BD no tiene el formato esperado.")
+                continue
 
-        # 3. Historial en blanco (Sin persistencia de usuario)
-        historial_vacio = []
-
-        print(f"🧠 Consultando a {nombre_bot} (Almacén: {id_almacen})...")
-
-        # 4. LLAMADA AL CONTROLADOR GEMINI
-        # Se envía la pregunta, la lista vacía y el identificador del almacén de archivos
+        # 5. LLAMADA AL CONTROLADOR GEMINI
         respuesta = self.controlador_gemini.hacer_pregunta(
             pregunta=pregunta,
-            historial=historial_vacio,
+            historial=historial_formateado,
             id_almacen=id_almacen
         )
 
-        # 5. Retorno del resultado
+        # 6. GUARDAR EN BASE DE DATOS
         if respuesta:
+            # Guardamos la pregunta del usuario
+            self.db.añadir_pregunta(id_conversacion, pregunta)
+            # Guardamos la respuesta del bot
+            self.db.añadir_respuesta(id_conversacion, respuesta)
             return respuesta
         else:
             return "No he podido encontrar información relacionada en los documentos."
+
+    def guardar_conversacion(self, nombre_bot: str, id_usuario: str = "user_default") -> int:
+        """
+        Crea una nueva conversación en la base de datos para un bot específico
+        y devuelve el ID de la conversación generada.
+        """
+        # 1. Buscamos el ID del bot por su nombre
+        id_bot = self.db.obtener_id_bot_por_nombre(nombre_bot)
+        
+        if id_bot is None:
+            print(f"❌ Error: No se encontró el bot '{nombre_bot}' en la base de datos.")
+            return None
+
+        # 2. Definimos un título sencillo
+        titulo_chat = f"Chat con {nombre_bot}"
+
+        # 3. Creamos la conversación en la BD
+        id_nueva_conv = self.db.crear_nueva_conversacion(
+            id_bot=id_bot, 
+            id_usuario=id_usuario, 
+            titulo=titulo_chat
+        )
+
+        if id_nueva_conv:
+            print(f"✅ Nueva conversación creada (ID: {id_nueva_conv}) para el bot {nombre_bot}.")
+            return id_nueva_conv
+        else:
+            print("❌ Error al crear la conversación en la base de datos.")
+            return None
 

@@ -15,11 +15,6 @@ from telegram.ext import CallbackQueryHandler
 
 class TelegramBot:
     def __init__(self, token: str, controlador, lista_bots: list):
-        """
-        token: Token de Telegram.
-        controlador: Tu controlador principal RAG.
-        lista_bots: Lista de strings ['Bot1', 'Bot2', ...] para el menú.
-        """
         persistence = PicklePersistence(filepath="user_data.pkl")
         
         self.app = (
@@ -65,59 +60,58 @@ class TelegramBot:
             await update.message.reply_text(saludo, reply_markup=reply_markup)
 
     async def seleccionar_asistente(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Maneja el clic en el botón (CallbackQuery)."""
+        """Maneja el clic en el botón y crea la conversación en la BD."""
         query = update.callback_query
         await query.answer()
 
         nombre_bot = query.data.replace("select_", "")
-        context.user_data['bot_actual'] = nombre_bot
+        
+        # 1. Creamos la conversación en la BD para este usuario de Telegram
+        id_telegram = str(update.effective_user.id)
+        id_nueva_conv = self.controlador.guardar_conversacion(nombre_bot, id_usuario=id_telegram)
 
-        try:
+        if id_nueva_conv:
+            # 2. Guardamos AMBOS en la sesión de Telegram del usuario
+            context.user_data['bot_actual'] = nombre_bot
+            context.user_data['id_conv_actual'] = id_nueva_conv
+
             await query.edit_message_text(
-                text=f"✅ Has seleccionado a: *{nombre_bot}*\n\nYa puedes hacerme preguntas.",
+                text=f"✅ Has seleccionado a: *{nombre_bot}*\n\nSe ha iniciado una nueva sesión (ID: {id_nueva_conv}). Ya puedes preguntar.",
                 parse_mode='Markdown'
             )
-        except Exception:
-            # Si el mensaje ya dice lo mismo, Telegram da error al editar, así lo ignoramos
-            pass
+        else:
+            await query.edit_message_text(text="❌ Error al iniciar conversación con el bot.")
 
     async def responder_a_pregunta(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Responde usando la lógica de procesar_consulta_bot."""
-        # 1. Recuperamos el nombre del bot que el usuario eligió previamente
+        """Responde usando el ID de conversación guardado en user_data."""
         bot_seleccionado = context.user_data.get('bot_actual')
+        id_conv = context.user_data.get('id_conv_actual') # <--- Recuperamos el ID de la BD
 
-        if not bot_seleccionado:
+        if not bot_seleccionado or not id_conv:
             await update.message.reply_text("⚠️ Por favor, selecciona un asistente primero con /start")
             return
 
         user_text = update.message.text
-
-        # 2. Mensaje visual de "escribiendo..."
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        mensaje_espera = await update.message.reply_text(f"🔎 {bot_seleccionado} está consultando los documentos...")
+        mensaje_espera = await update.message.reply_text(f"🔎 {bot_seleccionado} está consultando...")
 
         try:
-            # 3. LLAMADA A LA NUEVA FUNCIÓN
-            # Usamos la función que acabamos de crear: procesar_consulta_bot
-            # Solo le pasamos: nombre_bot y pregunta
+            # Llamamos al controlador pasando el ID de la conversación
             respuesta_gemini = await asyncio.to_thread(
                 self.controlador.procesar_consulta_bot, 
-                bot_seleccionado, # nombre_bot
-                user_text         # pregunta
+                bot_seleccionado, 
+                user_text,
+                id_conv  # <--- Pasamos el ID para que guarde y lea el historial
             )
 
-            # 4. Enviamos la respuesta final
             if respuesta_gemini:
                 await update.message.reply_text(respuesta_gemini)
             else:
-                await update.message.reply_text("No he podido obtener una respuesta válida.")
+                await update.message.reply_text("No he podido obtener una respuesta.")
 
         except Exception as e:
-            print(f"❌ Error en Telegram: {e}")
-            await update.message.reply_text(f"Lo siento, ocurrió un error técnico: {e}")
-        
+            await update.message.reply_text(f"❌ Error: {e}")
         finally:
-            # Opcional: Borrar el mensaje de "pensando..." para no ensuciar el chat
             await mensaje_espera.delete()
    
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -137,6 +131,7 @@ class TelegramBot:
         
         print(f"🔄 [TELEGRAM] Lista sincronizada. Bots disponibles: {len(self.lista_bots)}")
         return self.lista_bots
+    
     def run(self):
         """Método para iniciar el bot correctamente en un hilo."""
         print("Bot iniciado (clase TelegramBot), esperando mensajes...")

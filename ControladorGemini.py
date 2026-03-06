@@ -9,9 +9,10 @@ CLAVE_API = "AIzaSyB7EtBwf0oG5vgNTx2S2U-HoWVQOjWgrxc"
 
 class ControladorGemini:
     
-    def __init__(self, clave_api: str):
+    def __init__(self, clave_api: str,ruta_documentos):
         """Inicializa las tres capas de la aplicación."""
 
+        self.rutadocs=ruta_documentos
         self.conexion: ConexionGemini = ConexionGemini(clave_api=clave_api)
         self.cliente_gemini = self.conexion.obtener_cliente()
         self.repositorio: AlmacenGemini= AlmacenGemini(cliente=self.cliente_gemini)

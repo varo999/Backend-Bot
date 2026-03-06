@@ -54,3 +54,41 @@ class LimpiadorDatos:
         
         # 4. Forzar extensión .pdf
         return f"{nombre_limpio}.pdf"
+    
+    @staticmethod
+    def limpiar_nombre_imagen(archivo_img) -> str:
+        """
+        Limpia específicamente el nombre de un archivo de imagen.
+        - Filtra extensiones comunes de imagen.
+        - Normaliza nombres para evitar conflictos de sistema.
+        """
+        if not archivo_img or not hasattr(archivo_img, 'filename'):
+            return "imagen_default.png"
+
+        # 1. Extraer nombre y extensión
+        nombre_original = archivo_img.filename.lower()
+        nombre_base, extension = os.path.splitext(nombre_original)
+
+        # 2. Limpieza profunda del nombre base
+        # Eliminamos acentos y caracteres especiales, solo dejamos a-z, 0-9 y guiones
+        nombre_limpio = re.sub(r'[^a-z0-9]', '_', nombre_base)
+        # Evitamos múltiples guiones bajos seguidos (ej: "foto___1" -> "foto_1")
+        nombre_limpio = re.sub(r'_+', '_', nombre_limpio).strip('_')
+
+        # 3. Normalización de extensiones de imagen
+        mapeo_extensiones = {
+            '.jpeg': '.jpg',
+            '.png': '.png',
+            '.webp': '.webp',
+            '.gif': '.gif',
+            '.bmp': '.bmp'
+        }
+        
+        # Si la extensión no es de imagen conocida, forzamos .png o mantenemos la original
+        ext_final = mapeo_extensiones.get(extension, extension if extension in mapeo_extensiones.values() else '.png')
+
+        # 4. Resultado garantizado
+        if not nombre_limpio:
+            nombre_limpio = "img_bot"
+
+        return f"{nombre_limpio}{ext_final}"

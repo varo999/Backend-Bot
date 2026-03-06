@@ -3,10 +3,7 @@ import json
 
 class SubirArchivoAlmacen:
     def __init__(self, genai_client, ruta_documentos: str):
-        """
-        genai_client: El cliente oficial de Gemini.
-        ruta_documentos: Carpeta base donde residen los PDFs.
-        """
+        
         self.client = genai_client
         self.ruta_documentos = ruta_documentos
 
